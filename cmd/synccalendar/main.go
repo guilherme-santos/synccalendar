@@ -77,8 +77,8 @@ func main() {
 }
 
 func configure(cfgStorage synccalendar.ConfigStorage, mux synccalendar.Mux) {
-	fmt.Fprintln(os.Stdout, "Let's configure your calendars\n")
-	fmt.Fprintln(os.Stdout, "Calendar destination")
+	fmt.Fprintln(os.Stdout, "Let's configure your calendars")
+	fmt.Fprintln(os.Stdout, "\nCalendar destination")
 
 	var cfg synccalendar.Config
 

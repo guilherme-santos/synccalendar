@@ -40,7 +40,6 @@ func (s Syncer) Sync(ctx context.Context, from, to time.Time) error {
 		if err != nil {
 			return fmt.Errorf("unable to get events from %s/%s/%s: %w", cal.Account.Platform, cal.Account.Name, cal.ID, err)
 		}
-		_ = events
 
 		// cal2 is cal on the destination side
 		cal2 := new(Calendar)
