@@ -9,16 +9,16 @@ import (
 
 type Mux struct {
 	mu       sync.Mutex
-	storages map[string]synccalendar.Storage
+	storages map[string]synccalendar.Provider
 }
 
 func NewMux() *Mux {
 	return &Mux{
-		storages: make(map[string]synccalendar.Storage),
+		storages: make(map[string]synccalendar.Provider),
 	}
 }
 
-func (m *Mux) Get(platform string) (synccalendar.Storage, error) {
+func (m *Mux) Get(platform string) (synccalendar.Provider, error) {
 	storage, ok := m.storages[platform]
 	if !ok {
 		return nil, fmt.Errorf("calendar %q is not implemented", platform)
@@ -26,7 +26,7 @@ func (m *Mux) Get(platform string) (synccalendar.Storage, error) {
 	return storage, nil
 }
 
-func (m *Mux) Register(platform string, storage synccalendar.Storage) {
+func (m *Mux) Register(platform string, storage synccalendar.Provider) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/guilherme-santos/synccalendar"
@@ -16,17 +17,41 @@ import (
 )
 
 var cfg struct {
-	Google struct {
+	ConfigFile string
+	Google     struct {
 		CredentialsFile string
 	}
 }
 
 func init() {
+	flag.StringVar(&cfg.ConfigFile, "config", "./config.yml", "config file to be used")
 	flag.StringVar(&cfg.Google.CredentialsFile, "google-cred", "credentials.json", "credentials file for google")
 }
 
 func main() {
 	flag.Parse()
+
+	cfgStorage := file.NewConfig(cfg.ConfigFile)
+
+	credFile, err := ioutil.ReadFile(cfg.Google.CredentialsFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Unable to read credentials file:", err)
+		os.Exit(1)
+	}
+
+	googleCal, err := google.NewClient(credFile, cfgStorage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Unable to create google client:", err)
+		os.Exit(1)
+	}
+
+	mux := calendar.NewMux()
+	mux.Register("google", googleCal)
+
+	if flag.Arg(0) == "configure" {
+		configure(cfgStorage, mux)
+		return
+	}
 
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
@@ -39,23 +64,7 @@ func main() {
 		cancel()
 	}()
 
-	credFile, err := ioutil.ReadFile(cfg.Google.CredentialsFile)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to read credentials file:", err)
-		os.Exit(1)
-	}
-
-	googleCal, err := google.NewClient(credFile)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to create google client:", err)
-		os.Exit(1)
-	}
-
-	mux := calendar.NewMux()
-	mux.Register("google", googleCal)
-
-	cfg := file.NewConfig()
-	syncer := synccalendar.NewSyncer(cfg, mux)
+	syncer := synccalendar.NewSyncer(cfgStorage, mux)
 
 	from := time.Now().UTC().AddDate(0, 0, -7)
 	to := time.Now().UTC().AddDate(0, 0, 30)
@@ -63,6 +72,103 @@ func main() {
 	err = syncer.Sync(ctx, from, to)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Sync failed:", err)
+		os.Exit(1)
+	}
+}
+
+func configure(cfgStorage synccalendar.ConfigStorage, mux synccalendar.Mux) {
+	fmt.Fprintln(os.Stdout, "Let's configure your calendars\n")
+	fmt.Fprintln(os.Stdout, "Calendar destination")
+
+	var cfg synccalendar.Config
+
+	configurePlatform(&cfg.DestinationAccount.Platform, "platform")
+	configureField(&cfg.DestinationAccount.Name, "Account Name (your e-mail)")
+
+	calAPI, err := mux.Get(cfg.DestinationAccount.Platform)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to communicate with platform: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctx := context.Background()
+	auth, err := calAPI.Login(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to authenticate with platform: %v\n", err)
+		os.Exit(1)
+	}
+	cfg.DestinationAccount.Auth = string(auth)
+
+	for i := 0; ; i++ {
+		if i > 0 {
+			var newCal bool
+
+			configureField(&newCal, "New calendar source? (true/false)")
+			if !newCal {
+				break
+			}
+		}
+
+		fmt.Fprintln(os.Stdout, "")
+		fmt.Fprintf(os.Stdout, "Calendar source #%d\n", i+1)
+
+		var cal synccalendar.Calendar
+
+		configurePlatform(&cal.Account.Platform, "platform")
+		configureField(&cal.Account.Name, "Account Name (your e-mail)")
+
+		calAPI, err := mux.Get(cal.Account.Platform)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Unable to communicate with platform: %v\n", err)
+			os.Exit(1)
+		}
+
+		auth, err := calAPI.Login(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Unable to authenticate with platform: %v\n", err)
+			os.Exit(1)
+		}
+		cal.Account.Auth = string(auth)
+
+		configureField(&cal.ID, "Calendar ID (empty for primary)")
+		if cal.ID == "" {
+			cal.ID = "primary"
+		}
+		fmt.Fprintln(os.Stdout, `IMPORTANT: For the Destination Calendar ID, if you use "primary" all your events will be deleted`)
+		configureField(&cal.DstCalendarID, "Calendar ID on the destination account")
+		configureField(&cal.DstPrefix, `Event prefix (e.g. "[MyCompany] ")`)
+		if cal.DstPrefix != "" {
+			cal.DstPrefix += " "
+		}
+
+		cfg.Calendars = append(cfg.Calendars, &cal)
+	}
+
+	err = cfgStorage.Write(ctx, &cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to save config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stdout, "Config saved!")
+}
+
+func configurePlatform(a *string, field string) {
+	var platforms = []string{"google"}
+
+	configureField(a, fmt.Sprintf("Platform (%v)", strings.Join(platforms, ",")))
+
+	for _, p := range platforms {
+		if a != nil && *a == p {
+			return
+		}
+	}
+	configurePlatform(a, field)
+}
+
+func configureField(a any, label string) {
+	fmt.Fprintf(os.Stdout, "%s: ", label)
+	if _, err := fmt.Scan(a); err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to read field: %v\n", err)
 		os.Exit(1)
 	}
 }

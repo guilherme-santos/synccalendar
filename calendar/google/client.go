@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,40 +18,51 @@ import (
 )
 
 type Client struct {
-	config *oauth2.Config
-	svcs   map[string]*calendar.Service
+	cfgStorage synccalendar.ConfigStorage
+	oauthCfg   *oauth2.Config
+	svcs       map[string]*calendar.Service // map[account_name]calendar.Service
 }
 
-func NewClient(credJSON []byte) (*Client, error) {
-	config, err := google.ConfigFromJSON(credJSON, calendar.CalendarEventsScope)
+func NewClient(credJSON []byte, cfgStorage synccalendar.ConfigStorage) (*Client, error) {
+	oauthCfg, err := google.ConfigFromJSON(credJSON, calendar.CalendarEventsScope)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse client secret file to config: %w", err)
 	}
 
 	return &Client{
-		config: config,
-		svcs:   make(map[string]*calendar.Service),
+		cfgStorage: cfgStorage,
+		oauthCfg:   oauthCfg,
+		svcs:       make(map[string]*calendar.Service),
 	}, nil
 }
 
-func (c Client) calendarSvc(ctx context.Context, owner string) (*calendar.Service, error) {
-	svc, ok := c.svcs[owner]
+func (c Client) calendarSvc(ctx context.Context, accName string) (*calendar.Service, error) {
+	svc, ok := c.svcs[accName]
 	if ok {
 		return svc, nil
 	}
 
-	httpClient := httpClient(c.config, owner)
+	httpClient, err := c.httpClient(ctx, accName)
+	if err != nil {
+		return nil, err
+	}
 
-	svc, err := calendar.NewService(ctx, option.WithHTTPClient(httpClient))
-	c.svcs[owner] = svc
+	svc, err = calendar.NewService(ctx, option.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+
+	c.svcs[accName] = svc
 	return svc, err
 }
 
 func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) ([]*synccalendar.Event, error) {
-	svc, err := c.calendarSvc(ctx, cal.Owner)
+	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Fprintf(os.Stdout, "Getting events from %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
 
 	events, err := svc.Events.List(cal.ID).
 		Context(ctx).
@@ -80,27 +92,26 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 		}
 	}
 
+	fmt.Fprintf(os.Stdout, "%d event(s) found\n", len(scEvents))
+
 	return scEvents, nil
 }
 
-func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calendar, calID string, from, to time.Time) error {
-	events, err := c.Events(ctx, &synccalendar.Calendar{
-		Platform: cal.Platform,
-		Owner:    cal.Owner,
-		ID:       calID,
-	}, from, to)
+func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) error {
+	events, err := c.Events(ctx, cal, from, to)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "Deleting %d events\n", len(events))
 
-	svc, err := c.calendarSvc(ctx, cal.Owner)
+	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return err
 	}
+
+	fmt.Fprintf(os.Stdout, "Deleting events from %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
 
 	for _, evt := range events {
-		err := svc.Events.Delete(calID, evt.ID).
+		err := svc.Events.Delete(cal.ID, evt.ID).
 			Context(ctx).
 			Do()
 		if err != nil {
@@ -108,21 +119,23 @@ func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calend
 		}
 	}
 
+	fmt.Fprintln(os.Stdout, "OK!")
+
 	return nil
 }
 
-func (c Client) CreateEvents(ctx context.Context, dstCal, srcCal *synccalendar.Calendar, events []*synccalendar.Event) error {
-	svc, err := c.calendarSvc(ctx, dstCal.Owner)
+func (c Client) CreateEvents(ctx context.Context, cal *synccalendar.Calendar, prefix string, events []*synccalendar.Event) error {
+	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return err
 	}
 
-	for _, evt := range events {
-		fmt.Fprintf(os.Stdout, "Creating %q event\n", evt.Summary)
+	fmt.Fprintf(os.Stdout, "Creating events on %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
 
-		_, err = svc.Events.Insert(srcCal.DstCalendarID, &calendar.Event{
+	for _, evt := range events {
+		_, err = svc.Events.Insert(cal.ID, &calendar.Event{
 			EventType:   evt.Type,
-			Summary:     srcCal.DstPrefix + evt.Summary,
+			Summary:     prefix + evt.Summary,
 			Description: evt.Description,
 			Start: &calendar.EventDateTime{
 				DateTime: evt.StartsAt.Format(time.RFC3339),
@@ -137,60 +150,83 @@ func (c Client) CreateEvents(ctx context.Context, dstCal, srcCal *synccalendar.C
 			return err
 		}
 	}
+
+	fmt.Fprintln(os.Stdout, "OK!")
+
 	return nil
 }
 
-func httpClient(config *oauth2.Config, owner string) *http.Client {
-	tokFile := "token-" + owner + ".json"
-	tok, err := tokenFromFile(tokFile)
-	if err != nil {
-		tok = getTokenFromWeb(config, owner)
-		saveToken(tokFile, tok)
+func (c Client) Login(ctx context.Context) ([]byte, error) {
+	state := fmt.Sprintf("synccalendar-%d", time.Now().UTC().Nanosecond())
+	authURL := c.oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	fmt.Fprintf(os.Stdout, "\nGo to the following link in your browser\n%s\n", authURL)
+
+	mux := http.NewServeMux()
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
 	}
-	return config.Client(context.Background(), tok)
+
+	var (
+		token   *oauth2.Token
+		authErr error
+	)
+
+	mux.HandleFunc("/synccalendar", func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			go server.Shutdown(ctx)
+		}()
+
+		query := req.URL.Query()
+		if query.Get("state") != state {
+			authErr = errors.New("oauth link is not valid")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		token, authErr = c.oauthCfg.Exchange(context.TODO(), query.Get("code"))
+		if authErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintln(w, "Unable to retrieve token:", authErr)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "All good, you can close this window!")
+	})
+
+	serverCh := make(chan struct{})
+	var svrErr error
+	go func() {
+		svrErr = server.ListenAndServe()
+		close(serverCh)
+	}()
+
+	<-serverCh
+	if svrErr != nil && svrErr != http.ErrServerClosed {
+		return nil, svrErr
+	}
+	if authErr != nil {
+		return nil, authErr
+	}
+	return json.Marshal(token)
 }
 
-func getTokenFromWeb(config *oauth2.Config, owner string) *oauth2.Token {
-	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-
-	fmt.Fprintln(os.Stdout, "Account", owner)
-	fmt.Fprintf(os.Stdout, "Go to the following link in your browser then type the "+
-		"authorization code: \n%v\n", authURL)
-
-	var authCode string
-	if _, err := fmt.Scan(&authCode); err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to read authorization code:", err)
-		os.Exit(1)
-	}
-
-	tok, err := config.Exchange(context.TODO(), authCode)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to retrieve token from web:", err)
-		os.Exit(1)
-	}
-	return tok
-}
-
-func tokenFromFile(file string) (*oauth2.Token, error) {
-	f, err := os.Open(file)
+func (c Client) httpClient(ctx context.Context, accName string) (*http.Client, error) {
+	cfg, err := c.cfgStorage.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+
+	acc := cfg.AccountByName(accName)
+	if acc == nil {
+		return nil, errors.New("account not found")
+	}
 
 	var tok *oauth2.Token
-	err = json.NewDecoder(f).Decode(&tok)
-	return tok, err
-}
-
-func saveToken(path string, token *oauth2.Token) {
-	fmt.Printf("Saving credential file to: %s\n", path)
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	err = json.Unmarshal([]byte(acc.Auth), &tok)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to cache oauth token:", err)
-		return
+		return nil, err
 	}
-	defer f.Close()
-
-	json.NewEncoder(f).Encode(token)
+	return c.oauthCfg.Client(ctx, tok), nil
 }
