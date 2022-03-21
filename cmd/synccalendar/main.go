@@ -21,11 +21,13 @@ var cfg struct {
 	Google     struct {
 		CredentialsFile string
 	}
+	IgnoreDeclinedEvents bool
 }
 
 func init() {
 	flag.StringVar(&cfg.ConfigFile, "config", "./config.yml", "config file to be used")
 	flag.StringVar(&cfg.Google.CredentialsFile, "google-cred", "credentials.json", "credentials file for google")
+	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
 }
 
 func main() {
@@ -65,6 +67,7 @@ func main() {
 	}()
 
 	syncer := synccalendar.NewSyncer(cfgStorage, mux)
+	syncer.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
 
 	from := time.Now().UTC().AddDate(0, 0, -7)
 	to := time.Now().UTC().AddDate(0, 0, 30)

@@ -9,6 +9,8 @@ import (
 type Syncer struct {
 	cfgStorage ConfigStorage
 	mux        Mux
+
+	IgnoreDeclinedEvents bool
 }
 
 func NewSyncer(cfgStorage ConfigStorage, mux Mux) *Syncer {
@@ -53,7 +55,7 @@ func (s Syncer) Sync(ctx context.Context, from, to time.Time) error {
 		}
 
 		// Get events from the source
-		events, err := calAPI.Events(ctx, cal, from, to)
+		events, err := calAPI.Events(ctx, cal, from, to, s.IgnoreDeclinedEvents)
 		if err != nil {
 			return fmt.Errorf("unable to get events from %s/%s/%s: %w", cal.Account.Platform, cal.Account.Name, cal.ID, err)
 		}

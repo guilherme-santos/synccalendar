@@ -116,7 +116,7 @@ func (c Client) HasNewEvents(ctx context.Context, cal *synccalendar.Calendar) (b
 	return false, nil
 }
 
-func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) ([]*synccalendar.Event, error) {
+func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time, ignoreDeclinedEvents bool) ([]*synccalendar.Event, error) {
 	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return nil, err
@@ -144,16 +144,28 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 		}
 
 		for _, evt := range events.Items {
+			var responseStatus synccalendar.ResponseStatus
+			for _, attendees := range evt.Attendees {
+				if attendees.Self {
+					responseStatus = synccalendar.ResponseStatus(attendees.ResponseStatus)
+				}
+			}
+
+			if ignoreDeclinedEvents && responseStatus == synccalendar.Declined {
+				continue
+			}
+
 			startsAt, _ := time.Parse(time.RFC3339, evt.Start.DateTime)
 			endsAt, _ := time.Parse(time.RFC3339, evt.End.DateTime)
 
 			scEvents = append(scEvents, &synccalendar.Event{
-				ID:          evt.Id,
-				Type:        evt.EventType,
-				Summary:     evt.Summary,
-				Description: evt.Description,
-				StartsAt:    startsAt,
-				EndsAt:      endsAt,
+				ID:             evt.Id,
+				Type:           evt.EventType,
+				Summary:        evt.Summary,
+				Description:    evt.Description,
+				StartsAt:       startsAt,
+				EndsAt:         endsAt,
+				ResponseStatus: responseStatus,
 			})
 		}
 
@@ -169,7 +181,7 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 }
 
 func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) error {
-	events, err := c.Events(ctx, cal, from, to)
+	events, err := c.Events(ctx, cal, from, to, false)
 	if err != nil {
 		return err
 	}

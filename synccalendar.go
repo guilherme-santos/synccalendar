@@ -51,7 +51,7 @@ type Mux interface {
 type Provider interface {
 	Login(context.Context) ([]byte, error)
 	HasNewEvents(_ context.Context, _ *Calendar) (bool, error)
-	Events(_ context.Context, _ *Calendar, from, to time.Time) ([]*Event, error)
+	Events(_ context.Context, _ *Calendar, from, to time.Time, ignoreDeclinedEvents bool) ([]*Event, error)
 	DeleteEventsPeriod(_ context.Context, _ *Calendar, from, to time.Time) error
 	CreateEvents(_ context.Context, _ *Calendar, prefix string, _ []*Event) error
 }
@@ -64,10 +64,20 @@ type Calendar struct {
 }
 
 type Event struct {
-	ID          string
-	Type        string
-	Summary     string
-	Description string
-	StartsAt    time.Time
-	EndsAt      time.Time
+	ID             string
+	Type           string
+	Summary        string
+	Description    string
+	StartsAt       time.Time
+	EndsAt         time.Time
+	ResponseStatus ResponseStatus
 }
+
+type ResponseStatus string
+
+var (
+	NeedsAction ResponseStatus = "needsAction"
+	Declined    ResponseStatus = "declined"
+	Tentative   ResponseStatus = "tentative"
+	Accepted    ResponseStatus = "accepted"
+)
