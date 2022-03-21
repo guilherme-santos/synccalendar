@@ -21,12 +21,14 @@ var cfg struct {
 	Google     struct {
 		CredentialsFile string
 	}
+	Force                bool
 	IgnoreDeclinedEvents bool
 }
 
 func init() {
 	flag.StringVar(&cfg.ConfigFile, "config", "./config.yml", "config file to be used")
 	flag.StringVar(&cfg.Google.CredentialsFile, "google-cred", "credentials.json", "credentials file for google")
+	flag.BoolVar(&cfg.Force, "force", false, "force update")
 	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
 }
 
@@ -72,7 +74,7 @@ func main() {
 	from := time.Now().UTC().AddDate(0, 0, -7)
 	to := time.Now().UTC().AddDate(0, 0, 30)
 
-	err = syncer.Sync(ctx, from, to)
+	err = syncer.Sync(ctx, from, to, cfg.Force)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Sync failed:", err)
 		os.Exit(1)
