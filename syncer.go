@@ -18,6 +18,9 @@ func NewSyncer(cfgStorage ConfigStorage, mux Mux) *Syncer {
 	}
 }
 
+// sleepBetweenCals is used to avoid rate limit
+const sleepBetweenCals = time.Second
+
 func (s Syncer) Sync(ctx context.Context, from, to time.Time) error {
 	cfg, err := s.cfgStorage.Read(ctx)
 	if err != nil {
@@ -33,6 +36,20 @@ func (s Syncer) Sync(ctx context.Context, from, to time.Time) error {
 		calAPI, err := s.mux.Get(cal.Account.Platform)
 		if err != nil {
 			return err
+		}
+
+		changes, err := calAPI.HasNewEvents(ctx, cal)
+		if err != nil {
+			return fmt.Errorf("unable to check if there're new events available for %s/%s/%s: %w", cal.Account.Platform, cal.Account.Name, cal.ID, err)
+		}
+
+		if cal.Account.LastSync == "" {
+			// this means it was the first sync, it can be really heavy, so let's wait a bit to avoid rate limit
+			time.Sleep(sleepBetweenCals)
+		}
+
+		if !changes {
+			continue
 		}
 
 		// Get events from the source
@@ -57,6 +74,9 @@ func (s Syncer) Sync(ctx context.Context, from, to time.Time) error {
 		if err != nil {
 			return fmt.Errorf("unable to create events on %s/%s/%s: %w", cal2.Account.Platform, cal2.Account.Name, cal2.ID, err)
 		}
+
+		// To avoid rate limit
+		time.Sleep(sleepBetweenCals)
 	}
 
 	return nil

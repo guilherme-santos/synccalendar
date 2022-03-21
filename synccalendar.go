@@ -9,6 +9,7 @@ type Account struct {
 	Platform string
 	Name     string
 	Auth     string
+	LastSync string `yaml:"last_sync"`
 }
 
 type Config struct {
@@ -30,6 +31,14 @@ func (c Config) AccountByName(name string) *Account {
 	return nil
 }
 
+func (c *Config) SetAccountLastSync(name string, lastSync string) {
+	for i, cal := range c.Calendars {
+		if cal.Account.Name == name {
+			c.Calendars[i].Account.LastSync = lastSync
+		}
+	}
+}
+
 type ConfigStorage interface {
 	Read(context.Context) (*Config, error)
 	Write(context.Context, *Config) error
@@ -41,6 +50,7 @@ type Mux interface {
 
 type Provider interface {
 	Login(context.Context) ([]byte, error)
+	HasNewEvents(_ context.Context, _ *Calendar) (bool, error)
 	Events(_ context.Context, _ *Calendar, from, to time.Time) ([]*Event, error)
 	DeleteEventsPeriod(_ context.Context, _ *Calendar, from, to time.Time) error
 	CreateEvents(_ context.Context, _ *Calendar, prefix string, _ []*Event) error
