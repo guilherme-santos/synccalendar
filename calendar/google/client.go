@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -56,6 +57,23 @@ func (c Client) calendarSvc(ctx context.Context, accName string) (*calendar.Serv
 	return svc, err
 }
 
+func shouldRetry(err error) bool {
+	var gErr *googleapi.Error
+	if !errors.As(err, &gErr) {
+		return false
+	}
+
+	fmt.Println()
+	fmt.Println()
+	j, _ := json.Marshal(gErr)
+	fmt.Println(string(j))
+	fmt.Println()
+	fmt.Println()
+	return false
+}
+
+const defaultSleep = 2 * time.Second
+
 func (c Client) HasNewEvents(ctx context.Context, cal *synccalendar.Calendar) (bool, error) {
 	acc, err := c.account(ctx, cal.Account.Name)
 	if err != nil {
@@ -81,6 +99,10 @@ func (c Client) HasNewEvents(ctx context.Context, cal *synccalendar.Calendar) (b
 			SyncToken(nextSyncToken).
 			Do()
 		if err != nil {
+			if shouldRetry(err) {
+				time.Sleep(defaultSleep)
+				continue
+			}
 			return false, err
 		}
 
@@ -140,6 +162,10 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 			PageToken(nextPageToken).
 			Do()
 		if err != nil {
+			if shouldRetry(err) {
+				time.Sleep(defaultSleep)
+				continue
+			}
 			return nil, err
 		}
 
@@ -194,10 +220,16 @@ func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calend
 	fmt.Fprintf(os.Stdout, "Deleting events from %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
 
 	for _, evt := range events {
-		err := svc.Events.Delete(cal.ID, evt.ID).
-			Context(ctx).
-			Do()
-		if err != nil {
+		for i := 0; i < 3; i++ {
+			err := svc.Events.Delete(cal.ID, evt.ID).Context(ctx).Do()
+			if err == nil {
+				break
+			}
+
+			if shouldRetry(err) {
+				time.Sleep(defaultSleep)
+				continue
+			}
 			return err
 		}
 	}
@@ -216,20 +248,29 @@ func (c Client) CreateEvents(ctx context.Context, cal *synccalendar.Calendar, pr
 	fmt.Fprintf(os.Stdout, "Creating events on %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
 
 	for _, evt := range events {
-		_, err = svc.Events.Insert(cal.ID, &calendar.Event{
-			EventType:   evt.Type,
-			Summary:     prefix + evt.Summary,
-			Description: evt.Description,
-			Start: &calendar.EventDateTime{
-				DateTime: evt.StartsAt.Format(time.RFC3339),
-			},
-			End: &calendar.EventDateTime{
-				DateTime: evt.EndsAt.Format(time.RFC3339),
-			},
-		}).
-			Context(ctx).
-			Do()
-		if err != nil {
+		for i := 0; i < 3; i++ {
+			_, err := svc.Events.Insert(cal.ID, &calendar.Event{
+				EventType:   evt.Type,
+				Summary:     prefix + evt.Summary,
+				Description: evt.Description,
+				Start: &calendar.EventDateTime{
+					DateTime: evt.StartsAt.Format(time.RFC3339),
+				},
+				End: &calendar.EventDateTime{
+					DateTime: evt.EndsAt.Format(time.RFC3339),
+				},
+				Reminders: &calendar.EventReminders{
+					UseDefault: true,
+				},
+			}).Context(ctx).Do()
+			if err == nil {
+				break
+			}
+
+			if shouldRetry(err) {
+				time.Sleep(defaultSleep)
+				continue
+			}
 			return err
 		}
 	}
