@@ -51,7 +51,7 @@ type Mux interface {
 type Provider interface {
 	Login(context.Context) ([]byte, error)
 	HasNewEvents(_ context.Context, _ *Calendar) (bool, error)
-	Events(_ context.Context, _ *Calendar, from, to time.Time, ignoreDeclinedEvents bool) ([]*Event, error)
+	Events(_ context.Context, _ *Calendar, from, to time.Time) ([]*Event, error)
 	DeleteEventsPeriod(_ context.Context, _ *Calendar, from, to time.Time) error
 	CreateEvents(_ context.Context, _ *Calendar, prefix string, _ []*Event) error
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/guilherme-santos/synccalendar"
@@ -22,6 +23,12 @@ type Client struct {
 	cfgStorage synccalendar.ConfigStorage
 	oauthCfg   *oauth2.Config
 	svcs       map[string]*calendar.Service // map[account_name]calendar.Service
+
+	IgnoreDeclinedEvents bool
+	Clockwise            struct {
+		SyncFocusTime bool
+		SyncLunch     bool
+	}
 }
 
 func NewClient(credJSON []byte, cfgStorage synccalendar.ConfigStorage) (*Client, error) {
@@ -138,7 +145,27 @@ func (c Client) HasNewEvents(ctx context.Context, cal *synccalendar.Calendar) (b
 	return false, nil
 }
 
-func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time, ignoreDeclinedEvents bool) ([]*synccalendar.Event, error) {
+func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) ([]*synccalendar.Event, error) {
+	return c.events(ctx, cal, from, to, func(evt *synccalendar.Event) bool {
+		if c.IgnoreDeclinedEvents && evt.ResponseStatus == synccalendar.Declined {
+			return true
+		}
+		if !c.Clockwise.SyncFocusTime && strings.EqualFold(evt.Summary, "❇️ Focus Time (via Clockwise)") {
+			return true
+		}
+		if !c.Clockwise.SyncFocusTime && strings.EqualFold(evt.Summary, "❇️ Lunch (via Clockwise)") {
+			return true
+		}
+		return false
+	})
+}
+
+func (c Client) events(
+	ctx context.Context,
+	cal *synccalendar.Calendar,
+	from, to time.Time,
+	ignoreFn func(*synccalendar.Event) bool,
+) ([]*synccalendar.Event, error) {
 	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return nil, err
@@ -177,14 +204,9 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 				}
 			}
 
-			if ignoreDeclinedEvents && responseStatus == synccalendar.Declined {
-				continue
-			}
-
 			startsAt, _ := time.Parse(time.RFC3339, evt.Start.DateTime)
 			endsAt, _ := time.Parse(time.RFC3339, evt.End.DateTime)
-
-			scEvents = append(scEvents, &synccalendar.Event{
+			scEvt := &synccalendar.Event{
 				ID:             evt.Id,
 				Type:           evt.EventType,
 				Summary:        evt.Summary,
@@ -192,7 +214,12 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 				StartsAt:       startsAt,
 				EndsAt:         endsAt,
 				ResponseStatus: responseStatus,
-			})
+			}
+
+			if ignoreFn != nil && ignoreFn(scEvt) {
+				continue
+			}
+			scEvents = append(scEvents, scEvt)
 		}
 
 		if events.NextPageToken == "" {
@@ -207,7 +234,7 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 }
 
 func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) error {
-	events, err := c.Events(ctx, cal, from, to, false)
+	events, err := c.events(ctx, cal, from, to, nil)
 	if err != nil {
 		return err
 	}

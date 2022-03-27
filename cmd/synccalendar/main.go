@@ -23,6 +23,10 @@ var cfg struct {
 	}
 	Force                bool
 	IgnoreDeclinedEvents bool
+	Clockwise            struct {
+		SyncFocusTime bool
+		SyncLunch     bool
+	}
 }
 
 func init() {
@@ -30,6 +34,8 @@ func init() {
 	flag.StringVar(&cfg.Google.CredentialsFile, "google-cred", "credentials.json", "credentials file for google")
 	flag.BoolVar(&cfg.Force, "force", false, "force update")
 	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
+	flag.BoolVar(&cfg.Clockwise.SyncFocusTime, "clockwise-sync-focus-time", false, "sync clockwise focus time")
+	flag.BoolVar(&cfg.Clockwise.SyncLunch, "clockwise-sync-lunch", false, "sync clockwise lunch")
 }
 
 func main() {
@@ -48,6 +54,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Unable to create google client:", err)
 		os.Exit(1)
 	}
+	googleCal.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
+	googleCal.Clockwise.SyncFocusTime = cfg.Clockwise.SyncFocusTime
+	googleCal.Clockwise.SyncLunch = cfg.Clockwise.SyncLunch
 
 	mux := calendar.NewMux()
 	mux.Register("google", googleCal)
@@ -69,8 +78,6 @@ func main() {
 	}()
 
 	syncer := synccalendar.NewSyncer(cfgStorage, mux)
-	syncer.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
-
 	from := time.Now().UTC().AddDate(0, 0, -7)
 	to := time.Now().UTC().AddDate(0, 0, 30)
 
