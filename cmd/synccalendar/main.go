@@ -25,6 +25,7 @@ func init() {
 	flag.Var(&cfg.SyncTo, "to", "events until (default: +30d)")
 	flag.BoolVar(&cfg.Force, "force", false, "force update")
 	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
+	flag.BoolVar(&cfg.IgnoreMyEventsAlone, "ignore-my-events-alone", false, "ignore events that I'm alone")
 	flag.BoolVar(&cfg.Clockwise.SyncFocusTime, "clockwise-sync-focus-time", false, "sync clockwise focus time")
 	flag.BoolVar(&cfg.Clockwise.SyncLunch, "clockwise-sync-lunch", false, "sync clockwise lunch")
 }
@@ -46,6 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 	googleCal.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
+	googleCal.IgnoreMyEventsAlone = cfg.IgnoreMyEventsAlone
 	googleCal.Clockwise.SyncFocusTime = cfg.Clockwise.SyncFocusTime
 	googleCal.Clockwise.SyncLunch = cfg.Clockwise.SyncLunch
 
@@ -191,6 +193,7 @@ type Config struct {
 	SyncTo               Date
 	Force                bool
 	IgnoreDeclinedEvents bool
+	IgnoreMyEventsAlone  bool
 	Clockwise            struct {
 		SyncFocusTime bool
 		SyncLunch     bool

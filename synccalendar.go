@@ -72,7 +72,10 @@ type Event struct {
 	Description    string
 	StartsAt       time.Time
 	EndsAt         time.Time
+	CreatedBy      string
+	CreatedByMe    bool
 	ResponseStatus ResponseStatus
+	NumAttendees   int
 }
 
 type ResponseStatus string

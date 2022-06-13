@@ -25,6 +25,7 @@ type Client struct {
 	svcs       map[string]*calendar.Service // map[account_name]calendar.Service
 
 	IgnoreDeclinedEvents bool
+	IgnoreMyEventsAlone  bool
 	Clockwise            struct {
 		SyncFocusTime bool
 		SyncLunch     bool
@@ -157,6 +158,9 @@ func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to
 		if c.IgnoreDeclinedEvents && evt.ResponseStatus == synccalendar.Declined {
 			return true
 		}
+		if c.IgnoreMyEventsAlone && evt.CreatedByMe && evt.NumAttendees == 0 {
+			return true
+		}
 		if !c.Clockwise.SyncFocusTime && strings.EqualFold(evt.Summary, "❇️ Focus Time (via Clockwise)") {
 			return true
 		}
@@ -220,7 +224,10 @@ func (c Client) events(
 				Description:    evt.Description,
 				StartsAt:       startsAt,
 				EndsAt:         endsAt,
+				CreatedBy:      evt.Creator.Email,
+				CreatedByMe:    evt.Creator.Self,
 				ResponseStatus: responseStatus,
+				NumAttendees:   len(evt.Attendees),
 			}
 
 			if ignoreFn != nil && ignoreFn(scEvt) {
