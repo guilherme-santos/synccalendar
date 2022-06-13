@@ -3,6 +3,7 @@ package synccalendar
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -23,6 +24,8 @@ func (s Syncer) Sync(ctx context.Context, from, to time.Time, force bool) error 
 	if err != nil {
 		return fmt.Errorf("unable to get configuration: %w", err)
 	}
+
+	fmt.Fprintf(os.Stdout, "Syncing calendar from %s to %s...\n", from.Format(DateFormat), to.Format(DateFormat))
 
 	dstCalAPI, err := s.mux.Get(cfg.DestinationAccount.Platform)
 	if err != nil {

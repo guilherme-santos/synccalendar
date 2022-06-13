@@ -16,22 +16,13 @@ import (
 	"github.com/guilherme-santos/synccalendar/file"
 )
 
-var cfg struct {
-	ConfigFile string
-	Google     struct {
-		CredentialsFile string
-	}
-	Force                bool
-	IgnoreDeclinedEvents bool
-	Clockwise            struct {
-		SyncFocusTime bool
-		SyncLunch     bool
-	}
-}
+var cfg Config
 
 func init() {
 	flag.StringVar(&cfg.ConfigFile, "config", "./config.yml", "config file to be used")
 	flag.StringVar(&cfg.Google.CredentialsFile, "google-cred", "credentials.json", "credentials file for google")
+	flag.Var(&cfg.SyncFrom, "from", "events since (default: -7d)")
+	flag.Var(&cfg.SyncTo, "to", "events until (default: +30d)")
 	flag.BoolVar(&cfg.Force, "force", false, "force update")
 	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
 	flag.BoolVar(&cfg.Clockwise.SyncFocusTime, "clockwise-sync-focus-time", false, "sync clockwise focus time")
@@ -77,11 +68,17 @@ func main() {
 		cancel()
 	}()
 
-	syncer := synccalendar.NewSyncer(cfgStorage, mux)
-	from := time.Now().UTC().AddDate(0, 0, -7)
-	to := time.Now().UTC().AddDate(0, 0, 30)
+	syncFrom := cfg.SyncFrom.Time
+	if syncFrom.IsZero() {
+		syncFrom = time.Now().UTC().AddDate(0, 0, -7)
+	}
+	syncTo := cfg.SyncTo.Time
+	if syncTo.IsZero() {
+		syncTo = time.Now().UTC().AddDate(0, 0, 30)
+	}
 
-	err = syncer.Sync(ctx, from, to, cfg.Force)
+	syncer := synccalendar.NewSyncer(cfgStorage, mux)
+	err = syncer.Sync(ctx, syncFrom, syncTo, cfg.Force)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Sync failed:", err)
 		os.Exit(1)
@@ -183,4 +180,31 @@ func configureField(a any, label string) {
 		fmt.Fprintf(os.Stderr, "Unable to read field: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+type Config struct {
+	ConfigFile string
+	Google     struct {
+		CredentialsFile string
+	}
+	SyncFrom             Date
+	SyncTo               Date
+	Force                bool
+	IgnoreDeclinedEvents bool
+	Clockwise            struct {
+		SyncFocusTime bool
+		SyncLunch     bool
+	}
+}
+
+type Date struct {
+	time.Time
+}
+
+func (d Date) String() string {
+	return d.Format(synccalendar.DateFormat)
+}
+
+func (d *Date) Set(value string) error {
+	return nil
 }

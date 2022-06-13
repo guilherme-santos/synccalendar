@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const DateFormat = "2006-01-02"
+
 type Account struct {
 	Platform string
 	Name     string
