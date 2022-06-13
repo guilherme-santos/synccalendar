@@ -70,6 +70,13 @@ func shouldRetry(err error) bool {
 		return false
 	}
 
+	for _, err := range gErr.Errors {
+		switch err.Reason {
+		case "rateLimitExceeded":
+			return true
+		}
+	}
+
 	fmt.Println()
 	fmt.Println()
 	j, _ := json.Marshal(gErr)

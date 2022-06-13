@@ -11,7 +11,7 @@ type Account struct {
 	Platform string
 	Name     string
 	Auth     string
-	LastSync string `yaml:"last_sync"`
+	LastSync string `yaml:"last_sync,omitempty"`
 }
 
 type Config struct {
