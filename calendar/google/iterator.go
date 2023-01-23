@@ -57,7 +57,7 @@ func newEvent(event *calendar.Event) *synccalendar.Event {
 	endsAt, _ := time.Parse(time.RFC3339, event.End.DateTime)
 	return &synccalendar.Event{
 		ID:             event.Id,
-		Type:           event.EventType,
+		Type:           synccalendar.EventType(event.EventType),
 		Summary:        event.Summary,
 		Description:    event.Description,
 		StartsAt:       startsAt,
@@ -71,7 +71,7 @@ func newEvent(event *calendar.Event) *synccalendar.Event {
 
 func newGoogleEvent(prefix string, event *synccalendar.Event) *calendar.Event {
 	return &calendar.Event{
-		EventType:   event.Type,
+		EventType:   event.Type.String(),
 		Summary:     prefix + event.Summary,
 		Description: event.Description,
 		Start: &calendar.EventDateTime{

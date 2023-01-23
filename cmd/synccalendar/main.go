@@ -26,6 +26,8 @@ func init() {
 	flag.BoolVar(&cfg.Force, "force", false, "force update")
 	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
 	flag.BoolVar(&cfg.IgnoreMyEventsAlone, "ignore-my-events-alone", false, "ignore events that I'm alone")
+	flag.BoolVar(&cfg.IgnoreOutOfOfficeEvent, "ignore-out-of-office-alone", false, "ignore out of office events")
+	flag.BoolVar(&cfg.IgnoreFocusTimeEvent, "ignore-focus-time-alone", false, "ignore focus time events")
 	flag.BoolVar(&cfg.Clockwise.SyncFocusTime, "clockwise-sync-focus-time", false, "sync clockwise focus time")
 	flag.BoolVar(&cfg.Clockwise.SyncLunch, "clockwise-sync-lunch", false, "sync clockwise lunch")
 }
@@ -78,6 +80,8 @@ func main() {
 	syncer := synccalendar.NewSyncer(cfgStorage, mux)
 	syncer.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
 	syncer.IgnoreMyEventsAlone = cfg.IgnoreMyEventsAlone
+	syncer.IgnoreOutOfOfficeEvent = cfg.IgnoreOutOfOfficeEvent
+	syncer.IgnoreFocusTimeEvent = cfg.IgnoreFocusTimeEvent
 	syncer.Clockwise.SyncFocusTime = cfg.Clockwise.SyncFocusTime
 	syncer.Clockwise.SyncLunch = cfg.Clockwise.SyncLunch
 
@@ -196,11 +200,13 @@ type Config struct {
 	Google     struct {
 		CredentialsFile string
 	}
-	SyncFrom             xtime.Date
-	Force                bool
-	IgnoreDeclinedEvents bool
-	IgnoreMyEventsAlone  bool
-	Clockwise            struct {
+	SyncFrom               xtime.Date
+	Force                  bool
+	IgnoreDeclinedEvents   bool
+	IgnoreMyEventsAlone    bool
+	IgnoreOutOfOfficeEvent bool
+	IgnoreFocusTimeEvent   bool
+	Clockwise              struct {
 		SyncFocusTime bool
 		SyncLunch     bool
 	}

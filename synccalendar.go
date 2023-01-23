@@ -125,7 +125,7 @@ type EventMapping struct {
 
 type Event struct {
 	ID             string
-	Type           string
+	Type           EventType
 	Summary        string
 	Description    string
 	StartsAt       time.Time
@@ -135,6 +135,18 @@ type Event struct {
 	ResponseStatus ResponseStatus
 	NumAttendees   int
 }
+
+type EventType string
+
+func (s EventType) String() string {
+	return string(s)
+}
+
+var (
+	EventTypeDefault     EventType = "default"
+	EventTypeOutOfOffice EventType = "outOfOffice"
+	EventTypeFocusTime   EventType = "focusTime"
+)
 
 type ResponseStatus string
 

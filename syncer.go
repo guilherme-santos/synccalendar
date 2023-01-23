@@ -13,9 +13,11 @@ type Syncer struct {
 	cfgStorage ConfigStorage
 	mux        Mux
 
-	IgnoreDeclinedEvents bool
-	IgnoreMyEventsAlone  bool
-	Clockwise            struct {
+	IgnoreDeclinedEvents   bool
+	IgnoreMyEventsAlone    bool
+	IgnoreOutOfOfficeEvent bool
+	IgnoreFocusTimeEvent   bool
+	Clockwise              struct {
 		SyncFocusTime bool
 		SyncLunch     bool
 	}
@@ -108,6 +110,12 @@ func (s Syncer) ignoreEvent(e *Event) bool {
 		return true
 	}
 	if s.IgnoreMyEventsAlone && e.CreatedByMe && e.NumAttendees == 0 {
+		return true
+	}
+	if s.IgnoreOutOfOfficeEvent && e.Type == EventTypeOutOfOffice {
+		return true
+	}
+	if s.IgnoreFocusTimeEvent && e.Type == EventTypeFocusTime {
 		return true
 	}
 	if !s.Clockwise.SyncFocusTime && strings.EqualFold(e.Summary, "❇️ Focus Time (via Clockwise)") {
