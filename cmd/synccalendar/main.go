@@ -14,6 +14,7 @@ import (
 	"github.com/guilherme-santos/synccalendar/calendar"
 	"github.com/guilherme-santos/synccalendar/calendar/google"
 	"github.com/guilherme-santos/synccalendar/file"
+	"gitlab.com/guilherme-santos/golib/xtime"
 )
 
 var cfg Config
@@ -189,8 +190,8 @@ type Config struct {
 	Google     struct {
 		CredentialsFile string
 	}
-	SyncFrom             Date
-	SyncTo               Date
+	SyncFrom             xtime.Date
+	SyncTo               xtime.Date
 	Force                bool
 	IgnoreDeclinedEvents bool
 	IgnoreMyEventsAlone  bool
@@ -198,16 +199,4 @@ type Config struct {
 		SyncFocusTime bool
 		SyncLunch     bool
 	}
-}
-
-type Date struct {
-	time.Time
-}
-
-func (d Date) String() string {
-	return d.Format(synccalendar.DateFormat)
-}
-
-func (d *Date) Set(value string) error {
-	return nil
 }
