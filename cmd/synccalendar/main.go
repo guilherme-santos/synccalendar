@@ -22,8 +22,7 @@ var cfg Config
 func init() {
 	flag.StringVar(&cfg.ConfigFile, "config", "./config.yml", "config file to be used")
 	flag.StringVar(&cfg.Google.CredentialsFile, "google-cred", "credentials.json", "credentials file for google")
-	flag.Var(&cfg.SyncFrom, "from", "events since (default: -7d)")
-	flag.Var(&cfg.SyncTo, "to", "events until (default: +30d)")
+	flag.Var(&cfg.SyncFrom, "from", "events since (e.g. 2022-08-12)")
 	flag.BoolVar(&cfg.Force, "force", false, "force update")
 	flag.BoolVar(&cfg.IgnoreDeclinedEvents, "ignore-declined-events", false, "ignore events that were declined")
 	flag.BoolVar(&cfg.IgnoreMyEventsAlone, "ignore-my-events-alone", false, "ignore events that I'm alone")
@@ -34,7 +33,11 @@ func init() {
 func main() {
 	flag.Parse()
 
-	cfgStorage := file.NewConfig(cfg.ConfigFile)
+	cfgStorage, err := file.LoadConfig(cfg.ConfigFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Unable to read config file:", err)
+		os.Exit(1)
+	}
 
 	credFile, err := ioutil.ReadFile(cfg.Google.CredentialsFile)
 	if err != nil {
@@ -47,10 +50,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Unable to create google client:", err)
 		os.Exit(1)
 	}
-	googleCal.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
-	googleCal.IgnoreMyEventsAlone = cfg.IgnoreMyEventsAlone
-	googleCal.Clockwise.SyncFocusTime = cfg.Clockwise.SyncFocusTime
-	googleCal.Clockwise.SyncLunch = cfg.Clockwise.SyncLunch
 
 	mux := calendar.NewMux()
 	mux.Register("google", googleCal)
@@ -71,30 +70,38 @@ func main() {
 		cancel()
 	}()
 
-	syncFrom := cfg.SyncFrom.Time
+	syncFrom := cfg.SyncFrom
 	if syncFrom.IsZero() {
-		syncFrom = time.Now().UTC().AddDate(0, 0, -7)
-	}
-	syncTo := cfg.SyncTo.Time
-	if syncTo.IsZero() {
-		syncTo = time.Now().UTC().AddDate(0, 0, 30)
+		syncFrom = xtime.TodayIn(time.UTC).AddDate(0, 0, -7)
 	}
 
 	syncer := synccalendar.NewSyncer(cfgStorage, mux)
-	err = syncer.Sync(ctx, syncFrom, syncTo, cfg.Force)
+	syncer.IgnoreDeclinedEvents = cfg.IgnoreDeclinedEvents
+	syncer.IgnoreMyEventsAlone = cfg.IgnoreMyEventsAlone
+	syncer.Clockwise.SyncFocusTime = cfg.Clockwise.SyncFocusTime
+	syncer.Clockwise.SyncLunch = cfg.Clockwise.SyncLunch
+
+	err = syncer.Sync(ctx, syncFrom, cfg.Force)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Sync failed:", err)
+	}
+	// flush even though we have an error
+	err = cfgStorage.Flush()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Unable to save config:", err)
 		os.Exit(1)
 	}
 }
 
 func configure(cfgStorage synccalendar.ConfigStorage, mux synccalendar.Mux) {
+	providers := mux.Providers()
+
 	fmt.Fprintln(os.Stdout, "Let's configure your calendars")
 	fmt.Fprintln(os.Stdout, "\nCalendar destination")
 
 	var cfg synccalendar.Config
 
-	configurePlatform(&cfg.DestinationAccount.Platform, "platform")
+	configurePlatform(&cfg.DestinationAccount.Platform, "platform", providers)
 	configureField(&cfg.DestinationAccount.Name, "Account Name (your e-mail)")
 
 	calAPI, err := mux.Get(cfg.DestinationAccount.Platform)
@@ -126,7 +133,7 @@ func configure(cfgStorage synccalendar.ConfigStorage, mux synccalendar.Mux) {
 
 		var cal synccalendar.Calendar
 
-		configurePlatform(&cal.Account.Platform, "platform")
+		configurePlatform(&cal.Account.Platform, "platform", providers)
 		configureField(&cal.Account.Name, "Account Name (your e-mail)")
 
 		calAPI, err := mux.Get(cal.Account.Platform)
@@ -156,25 +163,24 @@ func configure(cfgStorage synccalendar.ConfigStorage, mux synccalendar.Mux) {
 		cfg.Calendars = append(cfg.Calendars, &cal)
 	}
 
-	err = cfgStorage.Write(ctx, &cfg)
+	cfgStorage.Set(&cfg)
+	err = cfgStorage.Flush()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to save config: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Unable to save config:", err)
 		os.Exit(1)
 	}
 	fmt.Fprintln(os.Stdout, "Config saved!")
 }
 
-func configurePlatform(a *string, field string) {
-	var platforms = []string{"google"}
+func configurePlatform(a *string, field string, providers []string) {
+	configureField(a, fmt.Sprintf("Platform (%v)", strings.Join(providers, ",")))
 
-	configureField(a, fmt.Sprintf("Platform (%v)", strings.Join(platforms, ",")))
-
-	for _, p := range platforms {
+	for _, p := range providers {
 		if a != nil && *a == p {
 			return
 		}
 	}
-	configurePlatform(a, field)
+	configurePlatform(a, field, providers)
 }
 
 func configureField(a any, label string) {
@@ -191,7 +197,6 @@ type Config struct {
 		CredentialsFile string
 	}
 	SyncFrom             xtime.Date
-	SyncTo               xtime.Date
 	Force                bool
 	IgnoreDeclinedEvents bool
 	IgnoreMyEventsAlone  bool

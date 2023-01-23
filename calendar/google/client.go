@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/guilherme-santos/synccalendar"
+	"gitlab.com/guilherme-santos/golib/xtime"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -23,13 +23,6 @@ type Client struct {
 	cfgStorage synccalendar.ConfigStorage
 	oauthCfg   *oauth2.Config
 	svcs       map[string]*calendar.Service // map[account_name]calendar.Service
-
-	IgnoreDeclinedEvents bool
-	IgnoreMyEventsAlone  bool
-	Clockwise            struct {
-		SyncFocusTime bool
-		SyncLunch     bool
-	}
 }
 
 func NewClient(credJSON []byte, cfgStorage synccalendar.ConfigStorage) (*Client, error) {
@@ -65,259 +58,161 @@ func (c Client) calendarSvc(ctx context.Context, accName string) (*calendar.Serv
 	return svc, err
 }
 
-func shouldRetry(err error) bool {
-	var gErr *googleapi.Error
-	if !errors.As(err, &gErr) {
-		return false
-	}
-
-	for _, err := range gErr.Errors {
-		switch err.Reason {
-		case "rateLimitExceeded":
-			return true
-		}
-	}
-
-	fmt.Println()
-	fmt.Println()
-	j, _ := json.Marshal(gErr)
-	fmt.Println(string(j))
-	fmt.Println()
-	fmt.Println()
-	return false
-}
-
 const defaultSleep = 2 * time.Second
 
-func (c Client) HasNewEvents(ctx context.Context, cal *synccalendar.Calendar) (bool, error) {
-	acc, err := c.account(ctx, cal.Account.Name)
-	if err != nil {
-		return false, err
-	}
+func (c Client) Changes(ctx context.Context, cal *synccalendar.Calendar, from xtime.Date) (synccalendar.Iterator, error) {
+	it := &eventIterator{}
 
 	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
-		return false, err
+		return it, err
 	}
 
-	fmt.Fprintf(os.Stdout, "Check new events for %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
+	it.events = make(chan eventOrError)
+	go c.changes(ctx, cal, svc, from, it.events)
+
+	return it, nil
+}
+
+func (c Client) changes(ctx context.Context, cal *synccalendar.Calendar, svc *calendar.Service, from xtime.Date, eventCh chan eventOrError) {
+	fmt.Fprintf(os.Stdout, "Checking for new events on %s... ", cal)
+	defer close(eventCh)
+
+	var changes bool
 
 	nextPageToken := ""
-	nextSyncToken := acc.LastSync
-	changes := false
+	nextSyncToken := cal.Account.LastSync
+	timeMax := time.Now().AddDate(0, 1, 0).Format(time.RFC3339)
 
 	for {
-		events, err := svc.Events.List(cal.ID).
+		eventsCall := svc.Events.List(cal.ID).
 			Context(ctx).
+			ShowDeleted(true).
 			SingleEvents(true).
-			PageToken(nextPageToken).
-			SyncToken(nextSyncToken).
-			Do()
+			PageToken(nextPageToken)
+		if nextSyncToken != "" {
+			eventsCall.SyncToken(nextSyncToken)
+		} else {
+			eventsCall.TimeMax(timeMax)
+			if !from.IsZero() {
+				eventsCall.TimeMin(from.Format(time.RFC3339))
+			}
+		}
+
+		events, err := eventsCall.Do()
 		if err != nil {
 			if shouldRetry(err) {
 				time.Sleep(defaultSleep)
 				continue
 			}
-			return false, err
+			fmt.Fprintln(os.Stdout, "error!")
+			eventCh <- eventOrError{err: err}
+			return
 		}
 
 		if len(events.Items) > 0 {
+			if !changes {
+				fmt.Println()
+			}
 			changes = true
 		}
+		for _, item := range events.Items {
+			eventCh <- eventOrError{e: newEvent(item)}
+		}
 
-		nextSyncToken = events.NextSyncToken
-
-		if events.NextPageToken == "" {
-			cfg, err := c.cfgStorage.Read(ctx)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "Unable to read account:", err)
-			} else {
-				cfg.SetAccountLastSync(cal.Account.Name, events.NextSyncToken)
-
-				err := c.cfgStorage.Write(ctx, cfg)
-				if err != nil {
-					fmt.Fprintln(os.Stderr, "Unable to save NextSyncToken:", err)
-				}
-			}
+		nextPageToken = events.NextPageToken
+		if nextPageToken == "" {
+			c.cfgStorage.Get().SetAccountLastSync(cal.Account.Name, events.NextSyncToken)
 			break
 		}
-		nextPageToken = events.NextPageToken
 	}
 
-	if changes {
-		fmt.Fprintln(os.Stdout, "found!")
-		return true, nil
+	if !changes {
+		fmt.Fprintln(os.Stdout, "up to date!")
 	}
-
-	fmt.Fprintln(os.Stdout, "up to date!")
-	return false, nil
 }
 
-func (c Client) Events(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) ([]*synccalendar.Event, error) {
-	return c.events(ctx, cal, from, to, func(evt *synccalendar.Event) bool {
-		if c.IgnoreDeclinedEvents && evt.ResponseStatus == synccalendar.Declined {
-			return true
-		}
-		if c.IgnoreMyEventsAlone && evt.CreatedByMe && evt.NumAttendees == 0 {
-			return true
-		}
-		if !c.Clockwise.SyncFocusTime && strings.EqualFold(evt.Summary, "❇️ Focus Time (via Clockwise)") {
-			return true
-		}
-		if !c.Clockwise.SyncFocusTime && strings.EqualFold(evt.Summary, "❇️ Lunch (via Clockwise)") {
-			return true
-		}
-		return false
-	})
-}
-
-func (c Client) events(
-	ctx context.Context,
-	cal *synccalendar.Calendar,
-	from, to time.Time,
-	ignoreFn func(*synccalendar.Event) bool,
-) ([]*synccalendar.Event, error) {
+func (c Client) CreateEvent(ctx context.Context, cal *synccalendar.Calendar, prefix string, req *synccalendar.Event) (*synccalendar.Event, error) {
 	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stdout, "Getting events from %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
+	fmt.Fprintf(os.Stdout, "Creating event %q on %s... ", req.Summary, cal)
 
-	var (
-		scEvents      []*synccalendar.Event
-		nextPageToken string
-	)
+	var res *synccalendar.Event
 
-	for {
-		events, err := svc.Events.List(cal.ID).
-			Context(ctx).
-			ShowDeleted(false).
-			SingleEvents(true).
-			TimeMin(from.Format(time.RFC3339)).
-			TimeMax(to.Format(time.RFC3339)).
-			OrderBy("startTime").
-			PageToken(nextPageToken).
-			Do()
-		if err != nil {
-			if shouldRetry(err) {
-				time.Sleep(defaultSleep)
-				continue
-			}
-			return nil, err
-		}
-
-		for _, evt := range events.Items {
-			var responseStatus synccalendar.ResponseStatus
-			for _, attendees := range evt.Attendees {
-				if attendees.Self {
-					responseStatus = synccalendar.ResponseStatus(attendees.ResponseStatus)
-				}
-			}
-
-			startsAt, _ := time.Parse(time.RFC3339, evt.Start.DateTime)
-			endsAt, _ := time.Parse(time.RFC3339, evt.End.DateTime)
-			scEvt := &synccalendar.Event{
-				ID:             evt.Id,
-				Type:           evt.EventType,
-				Summary:        evt.Summary,
-				Description:    evt.Description,
-				StartsAt:       startsAt,
-				EndsAt:         endsAt,
-				CreatedBy:      evt.Creator.Email,
-				CreatedByMe:    evt.Creator.Self,
-				ResponseStatus: responseStatus,
-				NumAttendees:   len(evt.Attendees),
-			}
-
-			if ignoreFn != nil && ignoreFn(scEvt) {
-				continue
-			}
-			scEvents = append(scEvents, scEvt)
-		}
-
-		if events.NextPageToken == "" {
+	for i := 0; i < 3; i++ {
+		gevent, err := svc.Events.Insert(cal.ID, newGoogleEvent(prefix, req)).Context(ctx).Do()
+		if err == nil {
+			res = newEvent(gevent)
 			break
 		}
-		nextPageToken = events.NextPageToken
+		if shouldRetry(err) {
+			time.Sleep(defaultSleep)
+			continue
+		}
+		fmt.Fprintln(os.Stdout, "error!")
+		return nil, err
 	}
 
-	fmt.Fprintf(os.Stdout, "%d event(s) found\n", len(scEvents))
-
-	return scEvents, nil
+	fmt.Fprintln(os.Stdout, "OK!")
+	return res, nil
 }
 
-func (c Client) DeleteEventsPeriod(ctx context.Context, cal *synccalendar.Calendar, from, to time.Time) error {
-	events, err := c.events(ctx, cal, from, to, nil)
+func (c Client) UpdateEvent(ctx context.Context, cal *synccalendar.Calendar, prefix string, req *synccalendar.Event) (*synccalendar.Event, error) {
+	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	fmt.Fprintf(os.Stdout, "Updating event %q on %s... ", req.Summary, cal)
+
+	var res *synccalendar.Event
+
+	for i := 0; i < 3; i++ {
+		gevent, err := svc.Events.Update(cal.ID, req.ID, newGoogleEvent(prefix, req)).Context(ctx).Do()
+		if err == nil {
+			res = newEvent(gevent)
+			break
+		}
+		if shouldRetry(err) {
+			time.Sleep(defaultSleep)
+			continue
+		}
+		fmt.Fprintln(os.Stdout, "error!")
+		return nil, err
+	}
+
+	fmt.Fprintln(os.Stdout, "OK!")
+	return res, nil
+}
+
+func (c Client) DeleteEvent(ctx context.Context, cal *synccalendar.Calendar, id string) error {
 	svc, err := c.calendarSvc(ctx, cal.Account.Name)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stdout, "Deleting events from %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
+	fmt.Fprintf(os.Stdout, "Deleting event on %s... ", cal)
 
-	for _, evt := range events {
-		for i := 0; i < 3; i++ {
-			err := svc.Events.Delete(cal.ID, evt.ID).Context(ctx).Do()
-			if err == nil {
-				break
-			}
-
-			if shouldRetry(err) {
-				time.Sleep(defaultSleep)
-				continue
-			}
-			return err
+	for i := 0; i < 3; i++ {
+		err := svc.Events.Delete(cal.ID, id).Context(ctx).Do()
+		if err == nil {
+			break
 		}
-	}
-
-	fmt.Fprintln(os.Stdout, "OK!")
-
-	return nil
-}
-
-func (c Client) CreateEvents(ctx context.Context, cal *synccalendar.Calendar, prefix string, events []*synccalendar.Event) error {
-	svc, err := c.calendarSvc(ctx, cal.Account.Name)
-	if err != nil {
+		if alreadyDeleted(err) {
+			break
+		}
+		if shouldRetry(err) {
+			time.Sleep(defaultSleep)
+			continue
+		}
+		fmt.Fprintln(os.Stdout, "error!")
 		return err
 	}
 
-	fmt.Fprintf(os.Stdout, "Creating events on %s/%s/%s... ", cal.Account.Platform, cal.Account.Name, cal.ID)
-
-	for _, evt := range events {
-		for i := 0; i < 3; i++ {
-			_, err := svc.Events.Insert(cal.ID, &calendar.Event{
-				EventType:   evt.Type,
-				Summary:     prefix + evt.Summary,
-				Description: evt.Description,
-				Start: &calendar.EventDateTime{
-					DateTime: evt.StartsAt.Format(time.RFC3339),
-				},
-				End: &calendar.EventDateTime{
-					DateTime: evt.EndsAt.Format(time.RFC3339),
-				},
-				Reminders: &calendar.EventReminders{
-					UseDefault: true,
-				},
-			}).Context(ctx).Do()
-			if err == nil {
-				break
-			}
-
-			if shouldRetry(err) {
-				time.Sleep(defaultSleep)
-				continue
-			}
-			return err
-		}
-	}
-
 	fmt.Fprintln(os.Stdout, "OK!")
-
 	return nil
 }
 
@@ -378,11 +273,7 @@ func (c Client) Login(ctx context.Context) ([]byte, error) {
 }
 
 func (c Client) account(ctx context.Context, accName string) (*synccalendar.Account, error) {
-	cfg, err := c.cfgStorage.Read(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	cfg := c.cfgStorage.Get()
 	acc := cfg.AccountByName(accName)
 	if acc == nil {
 		return nil, errors.New("account not found")
@@ -402,4 +293,34 @@ func (c Client) httpClient(ctx context.Context, accName string) (*http.Client, e
 		return nil, err
 	}
 	return c.oauthCfg.Client(ctx, tok), nil
+}
+
+func shouldRetry(err error) bool {
+	var gErr *googleapi.Error
+	if !errors.As(err, &gErr) {
+		return false
+	}
+
+	for _, err := range gErr.Errors {
+		switch err.Reason {
+		case "rateLimitExceeded":
+			return true
+		}
+	}
+	return false
+}
+
+func alreadyDeleted(err error) bool {
+	var gErr *googleapi.Error
+	if !errors.As(err, &gErr) {
+		return false
+	}
+
+	for _, err := range gErr.Errors {
+		switch err.Reason {
+		case "deleted":
+			return true
+		}
+	}
+	return false
 }
