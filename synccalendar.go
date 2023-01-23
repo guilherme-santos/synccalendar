@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"gitlab.com/guilherme-santos/golib/xtime"
 )
 
 type Account struct {
@@ -100,7 +98,7 @@ type Iterator interface {
 
 type Provider interface {
 	Login(context.Context) ([]byte, error)
-	Changes(_ context.Context, _ *Calendar, from xtime.Date) (Iterator, error)
+	Changes(_ context.Context, _ *Calendar, from Date) (Iterator, error)
 	CreateEvent(_ context.Context, _ *Calendar, prefix string, _ *Event) (*Event, error)
 	UpdateEvent(_ context.Context, _ *Calendar, prefix string, _ *Event) (*Event, error)
 	DeleteEvent(_ context.Context, _ *Calendar, id string) error

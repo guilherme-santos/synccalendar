@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"gitlab.com/guilherme-santos/golib/xtime"
 )
 
 type Syncer struct {
@@ -30,7 +28,7 @@ func NewSyncer(cfgStorage ConfigStorage, mux Mux) *Syncer {
 	}
 }
 
-func (s Syncer) Sync(ctx context.Context, from xtime.Date, force bool) error {
+func (s Syncer) Sync(ctx context.Context, from Date, force bool) error {
 	fmt.Fprintf(os.Stdout, "Syncing calendar from %s...\n", from.String())
 
 	cfg := s.cfgStorage.Get()

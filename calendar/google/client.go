@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/guilherme-santos/synccalendar"
-	"gitlab.com/guilherme-santos/golib/xtime"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -60,7 +59,7 @@ func (c Client) calendarSvc(ctx context.Context, accName string) (*calendar.Serv
 
 const defaultSleep = 2 * time.Second
 
-func (c Client) Changes(ctx context.Context, cal *synccalendar.Calendar, from xtime.Date) (synccalendar.Iterator, error) {
+func (c Client) Changes(ctx context.Context, cal *synccalendar.Calendar, from synccalendar.Date) (synccalendar.Iterator, error) {
 	it := &eventIterator{}
 
 	svc, err := c.calendarSvc(ctx, cal.Account.Name)
@@ -74,7 +73,7 @@ func (c Client) Changes(ctx context.Context, cal *synccalendar.Calendar, from xt
 	return it, nil
 }
 
-func (c Client) changes(ctx context.Context, cal *synccalendar.Calendar, svc *calendar.Service, from xtime.Date, eventCh chan eventOrError) {
+func (c Client) changes(ctx context.Context, cal *synccalendar.Calendar, svc *calendar.Service, from synccalendar.Date, eventCh chan eventOrError) {
 	fmt.Fprintf(os.Stdout, "Checking for new events on %s... ", cal)
 	defer close(eventCh)
 

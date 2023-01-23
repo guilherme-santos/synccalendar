@@ -8,13 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"time"
 
 	"github.com/guilherme-santos/synccalendar"
 	"github.com/guilherme-santos/synccalendar/calendar"
 	"github.com/guilherme-santos/synccalendar/calendar/google"
 	"github.com/guilherme-santos/synccalendar/file"
-	"gitlab.com/guilherme-santos/golib/xtime"
 )
 
 var cfg Config
@@ -74,7 +72,7 @@ func main() {
 
 	syncFrom := cfg.SyncFrom
 	if syncFrom.IsZero() {
-		syncFrom = xtime.TodayIn(time.UTC).AddDate(0, 0, -7)
+		syncFrom = synccalendar.Today().AddDate(0, 0, -7)
 	}
 
 	syncer := synccalendar.NewSyncer(cfgStorage, mux)
@@ -200,7 +198,7 @@ type Config struct {
 	Google     struct {
 		CredentialsFile string
 	}
-	SyncFrom               xtime.Date
+	SyncFrom               synccalendar.Date
 	Force                  bool
 	IgnoreDeclinedEvents   bool
 	IgnoreMyEventsAlone    bool
