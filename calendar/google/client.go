@@ -9,12 +9,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/guilherme-santos/synccalendar/internal"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+
+	"github.com/guilherme-santos/synccalendar/internal"
 )
 
 //go:embed credentials.json

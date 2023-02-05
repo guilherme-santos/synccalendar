@@ -205,7 +205,7 @@ func (s Syncer) deleteEvent(ctx context.Context, provider internal.Provider, cal
 }
 
 func (s Syncer) createEvent(ctx context.Context, provider internal.Provider, cal *Calendar, srcProviderID string, event *Event) error {
-	logf(s.output, cal, "Creating event: %q on %s", event.Summary, event.StartsAt.Format("02 Jan 06 15:04"))
+	logf(s.output, cal, "Creating event: %q on %s", event.Summary, formatDateTime(event.StartsAt))
 
 	newEvent, err := provider.CreateEvent(ctx, cal, event)
 	if err != nil {

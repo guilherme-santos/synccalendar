@@ -1,4 +1,5 @@
 *.db
+*.log
 calendar/google/credentials.json
 internal/sqlite/*.sql
 /synccalendar
