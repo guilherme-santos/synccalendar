@@ -4,21 +4,21 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/guilherme-santos/synccalendar"
+	"github.com/guilherme-santos/synccalendar/internal"
 )
 
 type Mux struct {
 	mu        sync.Mutex
-	providers map[string]synccalendar.Provider
+	providers map[string]internal.Provider
 }
 
 func NewMux() *Mux {
 	return &Mux{
-		providers: make(map[string]synccalendar.Provider),
+		providers: make(map[string]internal.Provider),
 	}
 }
 
-func (m *Mux) Get(platform string) (synccalendar.Provider, error) {
+func (m *Mux) Get(platform string) (internal.Provider, error) {
 	storage, ok := m.providers[platform]
 	if !ok {
 		return nil, fmt.Errorf("calendar %q is not implemented", platform)
@@ -26,7 +26,7 @@ func (m *Mux) Get(platform string) (synccalendar.Provider, error) {
 	return storage, nil
 }
 
-func (m *Mux) Register(platform string, storage synccalendar.Provider) {
+func (m *Mux) Register(platform string, storage internal.Provider) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

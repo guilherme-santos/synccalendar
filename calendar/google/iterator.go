@@ -3,19 +3,26 @@ package google
 import (
 	"time"
 
-	"github.com/guilherme-santos/synccalendar"
-
+	"github.com/guilherme-santos/synccalendar/internal"
 	"google.golang.org/api/calendar/v3"
 )
 
 type eventOrError struct {
-	e   *synccalendar.Event
-	err error
+	e        *internal.Event
+	lastSync string
+	err      error
 }
 
 type eventIterator struct {
-	events  chan eventOrError
-	current eventOrError
+	events   chan eventOrError
+	current  eventOrError
+	lastSync string
+}
+
+func newEventIterator() *eventIterator {
+	return &eventIterator{
+		events: make(chan eventOrError),
+	}
 }
 
 func (it *eventIterator) Next() (ok bool) {
@@ -23,10 +30,13 @@ func (it *eventIterator) Next() (ok bool) {
 	if it.current.err != nil {
 		return false
 	}
+	if ok && it.current.lastSync != "" {
+		it.lastSync = it.current.lastSync
+	}
 	return ok
 }
 
-func (it *eventIterator) Event() *synccalendar.Event {
+func (it *eventIterator) Event() *internal.Event {
 	c := it.current
 	if c.e == nil && c.err == nil {
 		panic("google: Event() called before Next()")
@@ -34,30 +44,36 @@ func (it *eventIterator) Event() *synccalendar.Event {
 	return c.e
 }
 
+func (it *eventIterator) LastSync() string {
+	return it.lastSync
+}
+
 func (it *eventIterator) Err() error {
 	return it.current.err
 }
 
-func newEvent(event *calendar.Event) *synccalendar.Event {
-	if event.Status == "cancelled" {
-		return &synccalendar.Event{
+const statusCanceled = "cancelled"
+
+func newEvent(event *calendar.Event) *internal.Event {
+	if event.Status == statusCanceled {
+		return &internal.Event{
 			ID:             event.Id,
-			ResponseStatus: synccalendar.Cancelled,
+			ResponseStatus: internal.Cancelled,
 		}
 	}
 
-	var responseStatus synccalendar.ResponseStatus
+	var responseStatus internal.ResponseStatus
 	for _, attendees := range event.Attendees {
 		if attendees.Self {
-			responseStatus = synccalendar.ResponseStatus(attendees.ResponseStatus)
+			responseStatus = internal.ResponseStatus(attendees.ResponseStatus)
 		}
 	}
 
 	startsAt, _ := time.Parse(time.RFC3339, event.Start.DateTime)
 	endsAt, _ := time.Parse(time.RFC3339, event.End.DateTime)
-	return &synccalendar.Event{
+	return &internal.Event{
 		ID:             event.Id,
-		Type:           synccalendar.EventType(event.EventType),
+		Type:           internal.EventType(event.EventType),
 		Summary:        event.Summary,
 		Description:    event.Description,
 		StartsAt:       startsAt,
@@ -69,7 +85,7 @@ func newEvent(event *calendar.Event) *synccalendar.Event {
 	}
 }
 
-func newGoogleEvent(prefix string, event *synccalendar.Event) *calendar.Event {
+func newGoogleEvent(prefix string, event *internal.Event) *calendar.Event {
 	return &calendar.Event{
 		EventType:   event.Type.String(),
 		Summary:     prefix + event.Summary,

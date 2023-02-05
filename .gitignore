@@ -1,4 +1,4 @@
-config.yml
-credentials.json
-synccalendar
-token-*.json
+*.db
+calendar/google/credentials.json
+internal/sqlite/*.sql
+/synccalendar
