@@ -149,6 +149,7 @@ func (s Syncer) SyncCalendar(ctx context.Context, dst, src *Calendar, from inter
 		logf(s.output, dst, "Unable to get new events from %s: %v", src, err)
 		return ErrSyncing
 	}
+	var foundErr bool
 	for it.Next() {
 		event := it.Event()
 		ignoreEvent := s.ignoreEvent(event)
@@ -167,9 +168,12 @@ func (s Syncer) SyncCalendar(ctx context.Context, dst, src *Calendar, from inter
 				s.deleteEvent(ctx, dstProvider, dst, event)
 			}
 		} else if event.ID == "" {
-			s.createEvent(ctx, dstProvider, dst, srcProviderID, event)
+			err = s.createEvent(ctx, dstProvider, dst, srcProviderID, event)
 		} else {
-			s.updateEvent(ctx, dstProvider, dst, event)
+			err = s.updateEvent(ctx, dstProvider, dst, event)
+		}
+		if err != nil {
+			foundErr = true
 		}
 	}
 
@@ -177,7 +181,7 @@ func (s Syncer) SyncCalendar(ctx context.Context, dst, src *Calendar, from inter
 		logf(s.output, dst, "Unable to get list of events: %v", err)
 		return ErrSyncing
 	}
-	if lastSync := it.LastSync(); lastSync != "" {
+	if lastSync := it.LastSync(); foundErr && lastSync != "" {
 		err = s.storage.SaveLastSync(ctx, src, lastSync)
 		if err != nil {
 			logf(s.output, dst, "Unable to save last sync: %v", err)
@@ -212,6 +216,8 @@ func (s Syncer) createEvent(ctx context.Context, provider internal.Provider, cal
 		logf(s.output, cal, "Unable to create event on the provider: %v", err)
 		return err
 	}
+	logf(s.output, cal, "Map event id %s to %s", srcProviderID, newEvent.ID)
+
 	err = s.storage.CreateEvent(ctx, cal, newEvent.ID, srcProviderID)
 	if err != nil {
 		logf(s.output, cal, "Unable to create event on the storage: %v", err)

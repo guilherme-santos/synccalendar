@@ -41,7 +41,7 @@ func NewClient(credJSON []byte) (*Client, error) {
 	}, nil
 }
 
-const defaultSleep = 2 * time.Second
+const defaultSleep = 5 * time.Second
 
 func (c Client) Events(ctx context.Context, cal *internal.Calendar, from internal.Date) (internal.Iterator, error) {
 	svc, err := c.calendarSvc(ctx, cal)
@@ -67,8 +67,7 @@ func (c Client) NewEventsFrom(ctx context.Context, cal *internal.Calendar, from 
 		List(cal.ProviderID).
 		Context(ctx).
 		ShowDeleted(true).
-		SingleEvents(true).
-		TimeMax(time.Now().AddDate(0, 1, 0).Format(time.RFC3339))
+		SingleEvents(true)
 	if !from.IsZero() {
 		eventsCall = eventsCall.TimeMin(from.Format(time.RFC3339))
 	}

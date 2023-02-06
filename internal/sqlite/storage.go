@@ -95,8 +95,7 @@ func (s Storage) DestinationEventID(ctx context.Context, cal *internal.Calendar,
 
 func (s Storage) CreateEvent(ctx context.Context, cal *internal.Calendar, dstEventID, srcEventID string) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO events
-			(calendar_id, provider_id, src_provider_id)
+		INSERT INTO events (calendar_id, provider_id, src_provider_id)
 		VALUES (?, ?, ?)
 	`, cal.ID, dstEventID, srcEventID)
 	return err
