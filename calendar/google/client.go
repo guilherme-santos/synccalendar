@@ -189,7 +189,7 @@ func (c Client) UpdateEvent(ctx context.Context, cal *internal.Calendar, req *in
 	prefix := fmt.Sprintf("[%s] ", cal.Name)
 
 	for {
-		_, err := svc.Events.Update(cal.ID, req.ID, newGoogleEvent(prefix, req)).Context(ctx).Do()
+		_, err := svc.Events.Update(cal.ProviderID, req.ID, newGoogleEvent(prefix, req)).Context(ctx).Do()
 		if err == nil {
 			msg += "✅"
 			break
