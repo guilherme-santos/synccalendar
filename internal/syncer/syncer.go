@@ -181,14 +181,17 @@ func (s Syncer) SyncCalendar(ctx context.Context, dst, src *Calendar, from inter
 		logf(s.output, dst, "Unable to get list of events: %v", err)
 		return ErrSyncing
 	}
-	if lastSync := it.LastSync(); foundErr && lastSync != "" {
-		err = s.storage.SaveLastSync(ctx, src, lastSync)
-		if err != nil {
-			logf(s.output, dst, "Unable to save last sync: %v", err)
+	if foundErr {
+		logf(s.output, dst, "Sync complete with error!")
+	} else {
+		if lastSync := it.LastSync(); lastSync != "" {
+			err = s.storage.SaveLastSync(ctx, src, lastSync)
+			if err != nil {
+				logf(s.output, dst, "Unable to save last sync: %v", err)
+			}
 		}
+		logf(s.output, dst, "Sync complete!")
 	}
-
-	logf(s.output, dst, "Sync complete!")
 	return nil
 }
 
