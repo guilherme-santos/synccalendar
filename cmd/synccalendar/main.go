@@ -45,8 +45,9 @@ func runMain(ctx context.Context) (err error) {
 		fmt.Fprint(w, "Global defaults:\n")
 		flag.PrintDefaults()
 		fmt.Fprintln(w)
-		fmt.Fprint(w, "Commands:")
+		fmt.Fprintln(w, "Commands:")
 		fmt.Fprintf(w, "  %-4s    %s\n", SyncCommand.Name, SyncCommand.Description)
+		fmt.Fprintf(w, "  %-4s    %s\n", ConfigureCommand.Name, ConfigureCommand.Description)
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "Use \"%s <command> --help\" for more information about a given command.", os.Args[0])
 		fmt.Fprintln(w)
@@ -60,6 +61,9 @@ func runMain(ctx context.Context) (err error) {
 
 	case SyncCommand.Name:
 		err = SyncCommand.Run(ctx, dbFilename, verbose, flag.Args()[1:])
+
+	case ConfigureCommand.Name:
+		err = ConfigureCommand.Run(ctx, dbFilename, verbose, flag.Args()[1:])
 
 	case CalendarCommand.Name:
 		err = CalendarCommand.Run(ctx, flag.Args()[1:])

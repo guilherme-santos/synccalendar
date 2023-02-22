@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -232,63 +233,62 @@ func (c Client) DeleteEvent(ctx context.Context, cal *internal.Calendar, id stri
 }
 
 func (c Client) Login(ctx context.Context) ([]byte, error) {
-	return nil, nil
-	// 	state := fmt.Sprintf("synccalendar-%d", time.Now().UTC().Nanosecond())
-	// 	authURL := c.oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-	// 	fmt.Fprintf(os.Stdout, "\nGo to the following link in your browser\n%s\n", authURL)
+	state := fmt.Sprintf("synccalendar-%d", time.Now().UTC().Nanosecond())
+	authURL := c.oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	fmt.Fprintf(os.Stdout, "\nGo to the following link in your browser\n%s\n", authURL)
 
-	// 	mux := http.NewServeMux()
-	// 	server := &http.Server{
-	// 		Addr:    ":8080",
-	// 		Handler: mux,
-	// 	}
+	mux := http.NewServeMux()
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
 
-	// 	var (
-	// 		token   *oauth2.Token
-	// 		authErr error
-	// 	)
+	var (
+		token   *oauth2.Token
+		authErr error
+	)
 
-	// 	mux.HandleFunc("/synccalendar", func(w http.ResponseWriter, req *http.Request) {
-	// 		defer func() {
-	// 			go server.Shutdown(ctx)
-	// 		}()
+	mux.HandleFunc("/synccalendar", func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			go server.Shutdown(ctx)
+		}()
 
-	// 		query := req.URL.Query()
-	// 		if query.Get("state") != state {
-	// 			authErr = errors.New("oauth link is not valid")
-	// 			w.WriteHeader(http.StatusBadRequest)
-	// 			return
-	// 		}
+		query := req.URL.Query()
+		if query.Get("state") != state {
+			authErr = errors.New("oauth link is not valid")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
-	// 		token, authErr = c.oauthCfg.Exchange(context.TODO(), query.Get("code"))
-	// 		if authErr != nil {
-	// 			w.WriteHeader(http.StatusBadRequest)
-	// 			fmt.Fprintln(w, "Unable to retrieve token:", authErr)
-	// 			return
-	// 		}
+		token, authErr = c.oauthCfg.Exchange(context.TODO(), query.Get("code"))
+		if authErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintln(w, "Unable to retrieve token:", authErr)
+			return
+		}
 
-	// 		w.WriteHeader(http.StatusOK)
-	// 		fmt.Fprintln(w, "All good, you can close this window!")
-	// 	})
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "All good, you can close this window!")
+	})
 
-	// 	serverCh := make(chan struct{})
-	// 	var svrErr error
-	// 	go func() {
-	// 		svrErr = server.ListenAndServe()
-	// 		close(serverCh)
-	// 	}()
+	serverCh := make(chan struct{})
+	var svrErr error
+	go func() {
+		svrErr = server.ListenAndServe()
+		close(serverCh)
+	}()
 
-	// <-serverCh
-	//
-	//	if svrErr != nil && svrErr != http.ErrServerClosed {
-	//		return nil, svrErr
-	//	}
-	//
-	//	if authErr != nil {
-	//		return nil, authErr
-	//	}
-	//
-	// return json.Marshal(token)
+	<-serverCh
+
+	if svrErr != nil && svrErr != http.ErrServerClosed {
+		return nil, svrErr
+	}
+
+	if authErr != nil {
+		return nil, authErr
+	}
+
+	return json.Marshal(token)
 }
 
 func (c Client) calendarSvc(ctx context.Context, cal *internal.Calendar) (*calendar.Service, error) {
