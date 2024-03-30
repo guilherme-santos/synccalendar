@@ -8,6 +8,14 @@ For example, all events created in the calendar A and B will show up on calendar
 
 ### Standalone
 
+In order to run the binary we need to install two packages on Ubuntu:
+
+```sh
+$ apt install -y build-essential libsqlite3-dev
+```
+
+After that you can install, like so:
+
 ```sh
 $ go install ./cmd/synccalendar
 ```
