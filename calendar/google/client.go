@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/googleapi"
+	googleoauth2 "google.golang.org/api/oauth2/v2"
 	"google.golang.org/api/option"
 
 	"github.com/guilherme-santos/synccalendar/internal"
@@ -32,7 +33,7 @@ func NewClient(credJSON []byte) (*Client, error) {
 	if credJSON == nil {
 		credJSON = credentials
 	}
-	oauthCfg, err := google.ConfigFromJSON(credJSON, calendar.CalendarEventsScope)
+	oauthCfg, err := google.ConfigFromJSON(credJSON, "", googleoauth2.UserinfoEmailScope, calendar.CalendarEventsScope)
 	if err != nil {
 		return nil, fmt.Errorf("google: parsing credentials file: %v", err)
 	}
@@ -232,14 +233,39 @@ func (c Client) DeleteEvent(ctx context.Context, cal *internal.Calendar, id stri
 	return nil
 }
 
-func (c Client) Login(ctx context.Context) ([]byte, error) {
+func (c Client) Email(ctx context.Context, token *oauth2.Token) (string, error) {
+	httpClient := c.oauthCfg.Client(ctx, token)
+	resp, err := httpClient.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var info struct {
+		Email string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", err
+	}
+	if info.Email == "" {
+		return "", errors.New("no email found")
+	}
+	return info.Email, nil
+}
+
+// Login runs a server to handle the login flow.
+// [fn] if provided will be called with the URL where the user
+// must login.
+func (c Client) Login(ctx context.Context, fn func(string)) (*oauth2.Token, error) {
 	state := fmt.Sprintf("synccalendar-%d", time.Now().UTC().Nanosecond())
 	authURL := c.oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-	fmt.Fprintf(os.Stdout, "\nGo to the following link in your browser\n%s\n", authURL)
+	if fn != nil {
+		fn(authURL)
+	}
 
 	mux := http.NewServeMux()
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    "0.0.0.0:8080",
 		Handler: mux,
 	}
 
@@ -287,8 +313,7 @@ func (c Client) Login(ctx context.Context) ([]byte, error) {
 	if authErr != nil {
 		return nil, authErr
 	}
-
-	return json.Marshal(token)
+	return token, nil
 }
 
 func (c Client) calendarSvc(ctx context.Context, cal *internal.Calendar) (*calendar.Service, error) {

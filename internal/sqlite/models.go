@@ -27,7 +27,3 @@ func (c Calendar) Convert() *internal.Calendar {
 		LastSync:   c.LastSync,
 	}
 }
-
-func accountID(a internal.Account) string {
-	return a.Platform + "/" + a.Name
-}

@@ -3,9 +3,10 @@ module github.com/guilherme-santos/synccalendar
 go 1.18
 
 require (
+	github.com/jmoiron/sqlx v1.3.5
+	github.com/mattn/go-sqlite3 v1.14.16
 	golang.org/x/oauth2 v0.4.0
 	google.golang.org/api v0.109.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -16,9 +17,6 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.1 // indirect
 	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
-	github.com/jmoiron/sqlx v1.3.5 // indirect
-	github.com/kr/text v0.2.0 // indirect
-	github.com/mattn/go-sqlite3 v1.14.16 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/sys v0.4.0 // indirect
@@ -27,5 +25,4 @@ require (
 	google.golang.org/genproto v0.0.0-20230202175211-008b39050e57 // indirect
 	google.golang.org/grpc v1.52.3 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+
+	"golang.org/x/oauth2"
 )
 
 type Mux interface {
@@ -9,7 +11,7 @@ type Mux interface {
 }
 
 type Provider interface {
-	Login(context.Context) ([]byte, error)
+	Login(context.Context, func(authURL string)) (*oauth2.Token, error)
 	Events(_ context.Context, _ *Calendar, from Date) (Iterator, error)
 	NewEventsFrom(_ context.Context, _ *Calendar, from Date) (Iterator, error)
 	NewEventsSince(_ context.Context, _ *Calendar, token string) (Iterator, error)

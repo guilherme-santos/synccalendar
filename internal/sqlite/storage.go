@@ -28,6 +28,45 @@ func NewStorage(db *sql.DB) *Storage {
 	return s
 }
 
+func (s Storage) AddAccount(ctx context.Context, account *internal.Account) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO accounts (id, auth) VALUES (?, ?)
+		ON CONFLICT(id) DO UPDATE SET auth=?;
+	`, account.ID(), account.Auth, account.Auth)
+	return err
+}
+
+func (s Storage) LinkCalendar(ctx context.Context, src, dst *internal.Calendar) error {
+	dstCalendarID := dst.Account.ID() + "/" + dst.Name
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO calendars (account_id, name, provider_id, dst_calendar_id)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(account_id, name) DO UPDATE
+			SET dst_calendar_id = ?;
+	`, src.Account.ID(), src.Name, src.ProviderID, dstCalendarID, dstCalendarID)
+	if err != nil {
+		return fmt.Errorf("source calendar: %v", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO calendars (account_id, name, provider_id)
+		VALUES (?, ?, ?)
+		ON CONFLICT(account_id, name) DO UPDATE
+			SET provider_id = ?;
+	`, dst.Account.ID(), dst.Name, dst.ProviderID, dst.ProviderID)
+	if err != nil {
+		return fmt.Errorf("destination calendar: %v", err)
+	}
+	return tx.Commit()
+}
+
 func (s Storage) DestinationCalendars(ctx context.Context, calIDs []string) ([]*internal.Calendar, error) {
 	orWhere := []string{}
 	var args []interface{}
@@ -46,7 +85,7 @@ func (s Storage) DestinationCalendars(ctx context.Context, calIDs []string) ([]*
 	err := s.db.SelectContext(ctx, &cals, `
 		SELECT c.account_id, c.name, c.provider_id, a.auth
 		FROM calendars c
-		LEFT JOIN accounts a ON a.id = c.account_id
+		INNER JOIN accounts a ON a.id = c.account_id
 		WHERE dst_calendar_id IS NULL
 			AND `+strings.Join(orWhere, " OR "), args...)
 	if err != nil {
@@ -66,7 +105,7 @@ func (s Storage) SourceCalendars(ctx context.Context, dstCalID string) ([]*inter
 	err := s.db.SelectContext(ctx, &cals, `
 		SELECT c.account_id, c.name, c.provider_id, c.last_sync, a.auth
 		FROM calendars c
-		LEFT JOIN accounts a ON a.id = c.account_id
+		INNER JOIN accounts a ON a.id = c.account_id
 		WHERE dst_calendar_id  = ?
 	`, dstCalID)
 	if err != nil {
@@ -111,6 +150,6 @@ func (s Storage) DeleteEvent(ctx context.Context, cal *internal.Calendar, eventI
 func (s Storage) SaveLastSync(ctx context.Context, cal *internal.Calendar, lastSync string) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE calendars SET last_sync = ? WHERE account_id = ? AND name = ?
-	`, lastSync, accountID(cal.Account), cal.Name)
+	`, lastSync, cal.Account.ID(), cal.Name)
 	return err
 }

@@ -76,6 +76,6 @@ func newMux(verbose bool) (internal.Mux, error) {
 	googleCal.Verbose = verbose
 
 	mux := calendar.NewMux()
-	mux.Register("google", googleCal)
+	mux.Register(googleProvider, googleCal)
 	return mux, nil
 }

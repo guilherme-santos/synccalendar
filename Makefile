@@ -9,3 +9,6 @@ build:
 
 install:
 	$(GO) install ./cmd/synccalendar
+
+sqlite:
+	sqlite3 synccalendar.db ".read ./internal/sqlite/config.sql"

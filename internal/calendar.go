@@ -6,6 +6,10 @@ type Account struct {
 	Auth     string
 }
 
+func (a Account) ID() string {
+	return a.Platform + "/" + a.Name
+}
+
 type Calendar struct {
 	ID         string
 	Name       string
