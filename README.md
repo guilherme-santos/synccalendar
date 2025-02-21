@@ -54,3 +54,11 @@ $ docker run -it \
     -v `pwd`/credentials.json:/credentials.json \
     xguiga/synccalendar:latest
 ```
+
+### Cron
+
+Add the following in your cron:
+
+```
+@hourly flock -x /var/lock/synccalendar ~/go/bin/synccalendar -v -db ~/synccalendar/synccalendar.db sync --ignore-declined-events --ignore-focus-time-alone --ignore-my-events-alone --ignore-out-of-office-alone >> ~/synccalendar/logs/$(date +\%F).log 2>&1
+```
