@@ -85,9 +85,15 @@ func newEvent(event *calendar.Event) *internal.Event {
 	}
 }
 
+var eventTypeFromGmail internal.EventType = "fromGmail"
+
 func newGoogleEvent(prefix string, event *internal.Event) *calendar.Event {
+	eventType := event.Type
+	if event.Type == eventTypeFromGmail {
+		eventType = internal.EventTypeDefault
+	}
 	return &calendar.Event{
-		EventType:   event.Type.String(),
+		EventType:   eventType.String(),
 		Summary:     prefix + event.Summary,
 		Description: event.Description,
 		Start: &calendar.EventDateTime{
