@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -304,7 +305,14 @@ func (c Client) Login(ctx context.Context, fn func(string)) (*oauth2.Token, erro
 		close(serverCh)
 	}()
 
-	<-serverCh
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	select {
+	case <-serverCh:
+	case sig := <-sig:
+		return nil, errors.New(sig.String())
+	}
 
 	if svrErr != nil && svrErr != http.ErrServerClosed {
 		return nil, svrErr

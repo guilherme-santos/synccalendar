@@ -76,7 +76,7 @@ func (s Syncer) Sync(ctx context.Context, calIDs []string, force bool, forceFrom
 			}
 
 			err := s.SyncCalendar(ctx, dstcal, srccal, forceFrom)
-			if err != nil {
+			if err != nil && !errors.Is(err, ErrSyncing) {
 				return err
 			}
 		}
