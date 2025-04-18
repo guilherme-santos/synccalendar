@@ -61,4 +61,11 @@ Add the following in your cron:
 
 ```
 @hourly flock -x /var/lock/synccalendar ~/go/bin/synccalendar -v -db ~/synccalendar/synccalendar.db sync --ignore-declined-events --ignore-focus-time-alone --ignore-my-events-alone --ignore-out-of-office-alone >> ~/synccalendar/logs/$(date +\%F).log 2>&1
+# Delete logs older than a month
+0 0 * * * find ~/synccalendar/logs/ -type f -name "*.log" -mtime +30 -delete
 ```
+
+## SQLite
+
+- `.tables` - List all tables
+- `.schema` - List the schema of a table
