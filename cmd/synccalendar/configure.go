@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/oauth2"
 
 	"github.com/guilherme-santos/synccalendar/calendar/google"
 	"github.com/guilherme-santos/synccalendar/internal"
@@ -36,27 +37,45 @@ func (s _configureCommand) Run(ctx context.Context, dbFilename string, verbose b
 	}
 	storage := sqlite.NewStorage(db)
 
-	googleCal, err := google.NewClient(nil)
-	if err != nil {
-		return fmt.Errorf("creating client: %v", err)
-	}
-	googleCal.Verbose = verbose
-
 	w := flag.CommandLine.Output()
 
-	authToken, err := googleCal.Login(ctx, func(authURL string) {
+	fmt.Fprintf(w, "Select a calendar provider:\n")
+	fmt.Fprintf(w, "1. Google\n")
+
+	var providerChoice int
+	fmt.Scanf("%d", &providerChoice)
+
+	var providerName string
+	var provider interface {
+		Login(ctx context.Context, fn func(string)) (*oauth2.Token, error)
+		Email(ctx context.Context, token *oauth2.Token) (string, error)
+	}
+	switch providerChoice {
+	case 1:
+		providerName = googleProvider
+		googleCal, err := google.NewClient(nil)
+		if err != nil {
+			return fmt.Errorf("creating Google client: %v", err)
+		}
+		googleCal.Verbose = verbose
+		provider = googleCal
+	default:
+		return fmt.Errorf("invalid choice: %d", providerChoice)
+	}
+
+	authToken, err := provider.Login(ctx, func(authURL string) {
 		fmt.Fprintf(w, "Go to the following link in your browser\n%s\n", authURL)
 	})
 	if err != nil {
 		return fmt.Errorf("google: logging in: %v", err)
 	}
-	userEmail, err := googleCal.Email(ctx, authToken)
+	userEmail, err := provider.Email(ctx, authToken)
 	if err != nil {
 		return fmt.Errorf("google: getting email: %v", err)
 	}
 
 	acc := internal.Account{
-		Platform: googleProvider,
+		Platform: providerName,
 		Name:     userEmail,
 		Auth: func() string {
 			v, _ := json.Marshal(authToken)
@@ -81,7 +100,7 @@ func (s _configureCommand) Run(ctx context.Context, dbFilename string, verbose b
 
 	fmt.Fprint(w, "Name of the new calendar: ")
 	fmt.Scanln(&destinationCalendar.Name)
-	fmt.Fprintf(w, "Calendar ID on %q: ", googleProvider)
+	fmt.Fprintf(w, "Calendar ID of the Destination on %q: ", googleProvider)
 	fmt.Scanln(&destinationCalendar.ProviderID)
 
 	sourceCalendar := &internal.Calendar{
